@@ -96,18 +96,16 @@ func diffAndPatch(oldVdom, newVdom *GoatNode, parent js.Value, doc js.Value) {
 		} else {
 			parent.Call("replaceChild", newNode.DOMNode, oldVdom.DOMNode)
 		}
-		oldVdom.DOMNode = newNode.DOMNode
+		*oldVdom = newNode // Replace entire node, including Text
 		return
 	}
 
-	// Update existing element
 	if oldVdom.Tag != "" {
-		// Update text content if no children
 		if len(oldVdom.Children) == 0 && oldVdom.Text != newVdom.Text {
 			oldVdom.DOMNode.Set("textContent", newVdom.Text)
+			oldVdom.Text = newVdom.Text // Sync Text
 		}
 
-		// Update attributes
 		for key, value := range newVdom.Attrs {
 			if oldVdom.Attrs[key] != value {
 				oldVdom.DOMNode.Call("setAttribute", key, value)
@@ -118,8 +116,8 @@ func diffAndPatch(oldVdom, newVdom *GoatNode, parent js.Value, doc js.Value) {
 				oldVdom.DOMNode.Call("removeAttribute", key)
 			}
 		}
+		oldVdom.Attrs = newVdom.Attrs // Sync Attrs
 
-		// Update event listeners
 		for event, oldHandler := range oldVdom.Events {
 			oldVdom.DOMNode.Call("removeEventListener", event, oldHandler)
 		}
@@ -127,23 +125,20 @@ func diffAndPatch(oldVdom, newVdom *GoatNode, parent js.Value, doc js.Value) {
 			oldVdom.DOMNode.Call("addEventListener", event, handler)
 			oldVdom.Events[event] = handler
 		}
+		oldVdom.Events = newVdom.Events // Sync Events
 
-		// Recursively diff children
 		oldLen := len(oldVdom.Children)
 		newLen := len(newVdom.Children)
 		for i := 0; i < oldLen || i < newLen; i++ {
 			if i >= oldLen && i < newLen {
-				// Add new child
 				newChild := createDOM(newVdom.Children[i], doc)
 				oldVdom.DOMNode.Call("appendChild", newChild.DOMNode)
 				oldVdom.Children = append(oldVdom.Children, newChild)
 			} else if i < oldLen && i >= newLen {
-				// Remove excess child
 				oldVdom.DOMNode.Call("removeChild", oldVdom.Children[i].DOMNode)
 				oldVdom.Children = oldVdom.Children[:i]
 				break
 			} else {
-				// Diff existing child, passing the current node's DOM as parent
 				diffAndPatch(&oldVdom.Children[i], &newVdom.Children[i], oldVdom.DOMNode, doc)
 			}
 		}
