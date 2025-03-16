@@ -2,10 +2,8 @@ package goat
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"syscall/js"
-	"time"
 )
 
 type ComponentInstance struct {
@@ -58,42 +56,6 @@ func UseState[T any](ctx context.Context, initialValue T) (func() T, func(T)) {
 	}
 
 	return getState, setState
-}
-
-func UseCallback(ctx context.Context, f func(this js.Value, args []js.Value) any) js.Func {
-	ci := getInstanceFromContext(ctx)
-	ci.mu.Lock()
-	defer ci.mu.Unlock()
-
-	callbackIndex := ci.callIndex
-	ci.callIndex++
-
-	if oldName, exists := ci.callbacks[callbackIndex]; exists {
-		js.Global().Delete(oldName)
-		if oldFunc, ok := ci.jsFuncs[callbackIndex]; ok {
-			oldFunc.Release() // Clean up old js.Func
-		}
-	}
-
-	name := fmt.Sprintf("fn%d_%d", time.Now().UnixNano(), callbackIndex)
-	jsFunc := js.FuncOf(f)
-	js.Global().Set(name, jsFunc)
-	ci.callbacks[callbackIndex] = name
-
-	if ci.jsFuncs == nil {
-		ci.jsFuncs = make(map[int]js.Func)
-	}
-	ci.jsFuncs[callbackIndex] = jsFunc
-
-	Log("UseCallback created:", name) // Debug
-	return jsFunc
-}
-
-func UseEffect(ctx context.Context, effect func()) {
-	ci := getInstanceFromContext(ctx)
-	ci.mu.Lock()
-	defer ci.mu.Unlock()
-	effect()
 }
 
 func (ci *ComponentInstance) Reset() {

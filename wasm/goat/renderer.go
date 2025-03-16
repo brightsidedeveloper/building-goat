@@ -40,35 +40,21 @@ func (r *Renderer) Render() {
 	ctx = context.WithValue(ctx, propsKey, r.props)
 	newVdom := r.comp(ctx, r.props)
 	r.updateDOM(newVdom)
-	r.vdom = newVdom
 }
-
-// func (r *Renderer) updateDOM(newVdom GoatNode) {
-// 	doc := js.Global().Get("document")
-// 	container := doc.Call("getElementById", r.id)
-// 	if !container.Truthy() {
-// 		Log("Error: Container not found for id:", r.id)
-// 		return
-// 	}
-// 	if !r.vdom.DOMNode.Truthy() {
-// 		r.vdom = createDOM(newVdom, doc)
-// 		container.Call("appendChild", r.vdom.DOMNode)
-// 	} else {
-// 		diffAndPatch(r.vdom, newVdom, r.vdom.DOMNode, doc)
-// 	}
-// }
 
 func (r *Renderer) updateDOM(newVdom GoatNode) {
 	doc := js.Global().Get("document")
 	container := doc.Call("getElementById", r.id)
 	if !container.Truthy() {
-		Log("Error: Container not found for id:", r.id)
 		return
 	}
-	// Always replace the entire DOM tree
-	container.Set("innerHTML", "") // Clear existing content
-	r.vdom = createDOM(newVdom, doc)
-	container.Call("appendChild", r.vdom.DOMNode)
+
+	if !r.vdom.DOMNode.Truthy() {
+		r.vdom = createDOM(newVdom, doc)
+		container.Call("appendChild", r.vdom.DOMNode)
+	} else {
+		diffAndPatch(&r.vdom, &newVdom, container, doc)
+	}
 }
 
 func createDOM(v GoatNode, doc js.Value) GoatNode {
@@ -98,19 +84,29 @@ func createDOM(v GoatNode, doc js.Value) GoatNode {
 	return v
 }
 
-func diffAndPatch(oldVdom, newVdom GoatNode, parent js.Value, doc js.Value) {
-	// Replace if tags differ or text node content differs
-	if oldVdom.Tag != newVdom.Tag || (oldVdom.Tag == "" && oldVdom.Text != newVdom.Text) {
-		newNode := createDOM(newVdom, doc)
-		parent.Call("replaceChild", newNode.DOMNode, oldVdom.DOMNode)
-		oldVdom.DOMNode = newNode.DOMNode
-		oldVdom.Text = newVdom.Text
-		oldVdom.Children = newVdom.Children
-		oldVdom.Events = newVdom.Events
+func diffAndPatch(oldVdom, newVdom *GoatNode, parent js.Value, doc js.Value) {
+	if !parent.Truthy() {
 		return
 	}
 
+	if oldVdom.Tag != newVdom.Tag || (oldVdom.Tag == "" && oldVdom.Text != newVdom.Text) {
+		newNode := createDOM(*newVdom, doc)
+		if !oldVdom.DOMNode.Truthy() {
+			parent.Call("appendChild", newNode.DOMNode)
+		} else {
+			parent.Call("replaceChild", newNode.DOMNode, oldVdom.DOMNode)
+		}
+		oldVdom.DOMNode = newNode.DOMNode
+		return
+	}
+
+	// Update existing element
 	if oldVdom.Tag != "" {
+		// Update text content if no children
+		if len(oldVdom.Children) == 0 && oldVdom.Text != newVdom.Text {
+			oldVdom.DOMNode.Set("textContent", newVdom.Text)
+		}
+
 		// Update attributes
 		for key, value := range newVdom.Attrs {
 			if oldVdom.Attrs[key] != value {
@@ -123,7 +119,7 @@ func diffAndPatch(oldVdom, newVdom GoatNode, parent js.Value, doc js.Value) {
 			}
 		}
 
-		// Update events
+		// Update event listeners
 		for event, oldHandler := range oldVdom.Events {
 			oldVdom.DOMNode.Call("removeEventListener", event, oldHandler)
 		}
@@ -132,23 +128,23 @@ func diffAndPatch(oldVdom, newVdom GoatNode, parent js.Value, doc js.Value) {
 			oldVdom.Events[event] = handler
 		}
 
-		// Reconcile children
+		// Recursively diff children
 		oldLen := len(oldVdom.Children)
 		newLen := len(newVdom.Children)
 		for i := 0; i < oldLen || i < newLen; i++ {
 			if i >= oldLen && i < newLen {
-				// Append new children
+				// Add new child
 				newChild := createDOM(newVdom.Children[i], doc)
 				oldVdom.DOMNode.Call("appendChild", newChild.DOMNode)
 				oldVdom.Children = append(oldVdom.Children, newChild)
 			} else if i < oldLen && i >= newLen {
-				// Remove excess children
+				// Remove excess child
 				oldVdom.DOMNode.Call("removeChild", oldVdom.Children[i].DOMNode)
 				oldVdom.Children = oldVdom.Children[:i]
 				break
 			} else {
-				// Update existing children
-				diffAndPatch(oldVdom.Children[i], newVdom.Children[i], oldVdom.DOMNode, doc)
+				// Diff existing child, passing the current node's DOM as parent
+				diffAndPatch(&oldVdom.Children[i], &newVdom.Children[i], oldVdom.DOMNode, doc)
 			}
 		}
 	}
