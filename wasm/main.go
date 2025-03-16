@@ -2,13 +2,10 @@ package main
 
 import (
 	"wasm/app/components"
-	"wasm/goat"
+
+	"github.com/brightsidedeveloper/goat"
 )
 
 func main() {
-
 	goat.RenderRoot("root", components.App, nil)
-
-	done := make(chan struct{})
-	<-done
 }

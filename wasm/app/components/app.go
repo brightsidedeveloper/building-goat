@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"syscall/js"
-	"wasm/goat"
+
+	"github.com/brightsidedeveloper/goat"
 )
 
 func App(ctx context.Context, props any) goat.GoatNode {
