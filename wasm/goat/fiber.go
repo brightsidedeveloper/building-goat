@@ -46,14 +46,13 @@ func NewFiber(comp Component, props any, parent *Fiber, key string) *Fiber {
 	}
 }
 
-// Ask how this works!
 var fiberKey = struct{}{}
 
 func GetFiberFromContext(ctx context.Context) *Fiber {
 	if f, ok := ctx.Value(fiberKey).(*Fiber); ok {
 		return f
 	}
-	panic("No fiber found in context")
+	return nil
 }
 
 func (r *Renderer) RenderFiber(fiber *Fiber) {
@@ -62,18 +61,16 @@ func (r *Renderer) RenderFiber(fiber *Fiber) {
 	if !fiber.Dirty {
 		return
 	}
-
 	if fiber.Alternate == nil {
 		fiber.Alternate = NewFiber(fiber.Component, fiber.Props, fiber.Parent, fiber.Key)
 	}
-
-	fiber.Mu.Lock()
 	fiber.CallIndex = 0
 	ctx := context.WithValue(context.Background(), fiberKey, fiber)
-	fiber.Node = fiber.Component(ctx, fiber.Props)
+	node := fiber.Component(ctx, fiber.Props)
+	fiber.Mu.Lock()
+	fiber.Node = node
 	fiber.Dirty = false
 	fiber.Mu.Unlock()
-
 	r.ReconcileChildren(fiber)
 }
 
@@ -81,22 +78,18 @@ func UseState[T any](ctx context.Context, initialValue T) (func() T, func(T)) {
 	f := GetFiberFromContext(ctx)
 	f.Mu.Lock()
 	defer f.Mu.Unlock()
-
 	if f.CallIndex >= len(f.StateOrder) {
 		stateKey := len(f.StateOrder)
 		f.StateOrder = append(f.StateOrder, stateKey)
 		f.State[stateKey] = initialValue
 	}
-
 	stateKey := f.StateOrder[f.CallIndex]
 	f.CallIndex++
-
 	getState := func() T {
 		f.Mu.Lock()
 		defer f.Mu.Unlock()
 		return f.State[stateKey].(T)
 	}
-
 	setState := func(newValue T) {
 		f.Mu.Lock()
 		f.State[stateKey] = newValue
@@ -109,7 +102,6 @@ func UseState[T any](ctx context.Context, initialValue T) (func() T, func(T)) {
 			root.Renderer.Schedule(root)
 		}
 	}
-
 	return getState, setState
 }
 
@@ -117,12 +109,9 @@ func UseEffect(ctx context.Context, setup func() func(), deps ...any) {
 	f := GetFiberFromContext(ctx)
 	f.Mu.Lock()
 	defer f.Mu.Unlock()
-
 	effectIndex := f.CallIndex
 	f.CallIndex++
-
 	if effectIndex < len(f.Effects) {
-		// Subsequent render: check if dependencies changed
 		oldDeps := f.Effects[effectIndex].Deps
 		if !depsEqual(oldDeps, deps) {
 			if f.Effects[effectIndex].Cleanup != nil {
@@ -132,7 +121,6 @@ func UseEffect(ctx context.Context, setup func() func(), deps ...any) {
 			f.Effects[effectIndex] = Effect{Setup: setup, Cleanup: cleanup, Deps: deps}
 		}
 	} else {
-		// First render: run setup and store the effect
 		cleanup := setup()
 		f.Effects = append(f.Effects, Effect{Setup: setup, Cleanup: cleanup, Deps: deps})
 	}
