@@ -1,11 +1,10 @@
 package main
 
 import (
-	"wasm/app/components"
-
-	"github.com/brightsidedeveloper/goat"
+	"wasm/app"
+	"wasm/goat"
 )
 
 func main() {
-	goat.RenderRoot("root", components.App, nil)
+	goat.RenderRoot("root", app.App, nil)
 }
